@@ -1,8 +1,13 @@
 package com.virex.music.ui.components
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,9 +28,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -53,6 +61,37 @@ fun GlassBox(
     ) { content() }
 }
 
+/** A pressable wrapper with a quick shrink on touch-down, so every tap
+ *  feels answered the moment a finger lands. No ripple: the scale is
+ *  the feedback, keeping the monochrome look clean. */
+@Composable
+fun Pressable(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.88f else 1f,
+        animationSpec = spring(
+            stiffness = Spring.StiffnessHigh,
+            dampingRatio = Spring.DampingRatioMediumBouncy
+        ),
+        label = "press-scale"
+    )
+    Box(
+        modifier = modifier
+            .scale(scale)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) { content() }
+}
+
 /** Small precise icon button: 40dp glass circle, thin icon. */
 @Composable
 fun GlassIconButton(
@@ -61,23 +100,25 @@ fun GlassIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     active: Boolean = false,
-    sizeDp: Int = 40
+    sizeDp: Int = 40,
+    iconSizeDp: Int = 20
 ) {
-    Box(
-        modifier = modifier
-            .size(sizeDp.dp)
-            .clip(CircleShape)
-            .background(if (active) VirexColors.GlassStrong else VirexColors.Glass)
-            .border(1.dp, VirexColors.Hairline, CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = description,
-            tint = if (active) VirexColors.White else VirexColors.Grey,
-            modifier = Modifier.size(20.dp)
-        )
+    Pressable(onClick = onClick, modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .size(sizeDp.dp)
+                .clip(CircleShape)
+                .background(if (active) VirexColors.GlassStrong else VirexColors.Glass)
+                .border(1.dp, VirexColors.Hairline, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = description,
+                tint = if (active) VirexColors.White else VirexColors.Grey,
+                modifier = Modifier.size(iconSizeDp.dp)
+            )
+        }
     }
 }
 
@@ -89,20 +130,21 @@ fun PlayButton(
     modifier: Modifier = Modifier,
     icon: ImageVector? = null
 ) {
-    Box(
-        modifier = modifier
-            .size(56.dp)
-            .clip(CircleShape)
-            .background(VirexColors.White)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon ?: if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-            contentDescription = if (playing) "Pause" else "Play",
-            tint = VirexColors.Black,
-            modifier = Modifier.size(28.dp)
-        )
+    Pressable(onClick = onClick, modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(VirexColors.White),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon ?: if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = if (playing) "Pause" else "Play",
+                tint = VirexColors.Black,
+                modifier = Modifier.size(28.dp)
+            )
+        }
     }
 }
 
@@ -221,19 +263,20 @@ fun VirexChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(50))
-            .background(if (selected) VirexColors.White else VirexColors.Glass)
-            .border(1.dp, VirexColors.Hairline, RoundedCornerShape(50))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = text,
-            color = if (selected) VirexColors.Black else VirexColors.White,
-            fontSize = 13.sp
-        )
+    Pressable(onClick = onClick, modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(if (selected) VirexColors.White else VirexColors.Glass)
+                .border(1.dp, VirexColors.Hairline, RoundedCornerShape(50))
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = text,
+                color = if (selected) VirexColors.Black else VirexColors.White,
+                fontSize = 13.sp
+            )
+        }
     }
 }

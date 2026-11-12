@@ -1,5 +1,6 @@
 package com.virex.music.data
 
+import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -46,6 +47,14 @@ object ApiClient {
         .addInterceptor(logging)
         .build()
 
+    // Lyrics get patient timeouts: on a slow connection the 10s
+    // defaults fail lyrics that the API would happily return.
+    private val lyricsClient = OkHttpClient.Builder()
+        .addInterceptor(logging)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
+
     val search: SearchApi = Retrofit.Builder()
         .baseUrl("https://jiosavan-api2.vercel.app/")
         .client(client)
@@ -55,7 +64,7 @@ object ApiClient {
 
     val lyrics: LyricsApi = Retrofit.Builder()
         .baseUrl("https://lrclib.net/")
-        .client(client)
+        .client(lyricsClient)
         .addConverterFactory(GsonConverterFactory.create())
         .build()
         .create(LyricsApi::class.java)

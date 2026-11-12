@@ -1,10 +1,16 @@
 package com.virex.music.player
 
 import android.app.Application
-import android.media.MediaPlayer
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.virex.music.data.ApiClient
 import com.virex.music.data.AppDatabase
 import com.virex.music.data.LyricLine
@@ -22,9 +28,14 @@ import kotlinx.coroutines.launch
 enum class LoopMode { OFF, ALL, ONE }
 
 /**
- * MediaPlayer-based player: queue, play/pause, next/previous, seek,
- * shuffle, repeat (off/all/one), sleep timer, HQ quality switching,
- * synced lyrics (LRCLIB) and suggestions auto-queued into the tail.
+ * ExoPlayer-based player: queue, play/pause, next/previous, seek,
+ * +/-10s skip, shuffle, repeat (off/all/one), sleep timer, HQ quality
+ * switching, synced lyrics (LRCLIB) and suggestions auto-queued into
+ * the tail.
+ *
+ * ExoPlayer (not MediaPlayer) because it retries and resumes stalled
+ * network streams instead of ending the song early on a flaky
+ * connection, and quality switches don't need a re-prepare dance.
  *
  * Playback is transient streaming, or local-file playback. This class
  * never writes audio to device storage.
@@ -34,11 +45,26 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val settings = SettingsStore(application)
     private val db = AppDatabase.get(application)
 
-    private var mediaPlayer: MediaPlayer? = null
+    private val exoPlayer: ExoPlayer = run {
+        // Browser-like UA: the CDN treats plain library clients worse.
+        val httpFactory = DefaultHttpDataSource.Factory()
+            .setUserAgent("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36")
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(30_000)
+        // DefaultDataSource routes content:// and file:// locally and
+        // http(s):// through the factory above.
+        val dataSourceFactory = DefaultDataSource.Factory(application, httpFactory)
+        ExoPlayer.Builder(application)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .build()
+    }
+
     private var progressJob: Job? = null
     private var sleepJob: Job? = null
     private var fadeJob: Job? = null
     private var suggestionsForId: String? = null
+    private var triedFallbackQuality = false
+    private var fadePending = false
 
     private val _queue = MutableStateFlow<List<Song>>(emptyList())
     val queue: StateFlow<List<Song>> = _queue.asStateFlow()
@@ -80,6 +106,36 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    private val listener = object : Player.Listener {
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            when (playbackState) {
+                Player.STATE_READY -> {
+                    val d = exoPlayer.duration
+                    _durationMs.value = if (d > 0) d.toInt() else 0
+                    if (fadePending) {
+                        fadePending = false
+                        applyCrossfadeIn()
+                    }
+                    _isPlaying.value = exoPlayer.isPlaying
+                }
+                Player.STATE_ENDED -> onTrackEnded()
+                else -> {}
+            }
+        }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            _isPlaying.value = isPlaying
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            handlePlayerError()
+        }
+    }
+
+    init {
+        exoPlayer.addListener(listener)
+    }
+
     fun clearError() { _error.value = null }
 
     fun playQueue(songs: List<Song>, startIndex: Int = 0) {
@@ -92,54 +148,54 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun playAt(newIndex: Int, resumePositionMs: Int = 0) {
         val songs = _queue.value
         if (songs.isEmpty() || newIndex !in songs.indices) return
-        _index.value = newIndex
         val song = songs[newIndex]
-        _current.value = song
+        // Validate the stream URL BEFORE touching playback state. A song
+        // with no URL must never hijack the UI while the old song keeps
+        // playing underneath it.
         val hq = settings.hq.value
         val url = song.urlFor(hq) ?: song.streamUrl
         if (url.isNullOrBlank()) {
             _error.value = "No playable audio for this song."
             return
         }
-        try {
-            fadeJob?.cancel()
-            progressJob?.cancel()
-            mediaPlayer?.release()
-            mediaPlayer = MediaPlayer().apply {
-                if (song.isLocal) {
-                    setDataSource(getApplication(), Uri.parse(url))
-                } else {
-                    setDataSource(url)
-                }
-                setOnPreparedListener { player ->
-                    _durationMs.value = player.duration
-                    if (resumePositionMs > 0 && resumePositionMs < player.duration) {
-                        player.seekTo(resumePositionMs)
-                        _positionMs.value = resumePositionMs
-                    } else {
-                        _positionMs.value = 0
-                    }
-                    applyCrossfadeIn(player)
-                    player.start()
-                    _isPlaying.value = true
-                    startProgress()
-                }
-                setOnCompletionListener { onTrackEnded() }
-                setOnErrorListener { _, _, _ ->
-                    _isPlaying.value = false
-                    _error.value = "Couldn't play this song."
-                    true
-                }
-                prepareAsync()
+        triedFallbackQuality = false
+        _index.value = newIndex
+        _current.value = song
+        playInternal(url, resumePositionMs)
+        recordRecentPlay(song)
+        loadLyrics(song)
+        loadSuggestions(song)
+    }
+
+    private fun playInternal(url: String, resumePositionMs: Int) {
+        fadeJob?.cancel()
+        progressJob?.cancel()
+        fadePending = true
+        _positionMs.value = resumePositionMs
+        _durationMs.value = 0
+        _error.value = null
+        exoPlayer.setMediaItem(MediaItem.fromUri(Uri.parse(url)))
+        if (resumePositionMs > 0) exoPlayer.seekTo(resumePositionMs.toLong())
+        exoPlayer.prepare()
+        exoPlayer.play()
+        startProgress()
+    }
+
+    /** On a playback error, retry the same song once at the other
+     *  quality before giving up — one CDN URL failing does not mean
+     *  the song is unplayable. */
+    private fun handlePlayerError() {
+        val song = _current.value
+        if (song != null && !song.isLocal && !triedFallbackQuality) {
+            triedFallbackQuality = true
+            val fallbackUrl = song.urlFor(!settings.hq.value)
+            if (!fallbackUrl.isNullOrBlank()) {
+                playInternal(fallbackUrl, _positionMs.value)
+                return
             }
-            _positionMs.value = resumePositionMs
-            recordRecentPlay(song)
-            loadLyrics(song)
-            loadSuggestions(song)
-        } catch (_: Exception) {
-            _isPlaying.value = false
-            _error.value = "Couldn't play this song."
         }
+        _isPlaying.value = false
+        _error.value = "Couldn't play this song."
     }
 
     /** HQ toggle really switches the stream: replays the current song
@@ -149,33 +205,31 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         settings.setHq(newHq)
         val song = _current.value
         if (song != null && !song.isLocal && _index.value >= 0) {
+            val url = song.urlFor(newHq) ?: song.streamUrl
+            if (url.isNullOrBlank()) return
             val pos = _positionMs.value
             val wasPlaying = _isPlaying.value
-            playAt(_index.value, resumePositionMs = pos)
-            if (!wasPlaying) {
-                viewModelScope.launch {
-                    delay(600)
-                    mediaPlayer?.pause()
-                    _isPlaying.value = false
-                }
-            }
+            triedFallbackQuality = false
+            fadeJob?.cancel()
+            progressJob?.cancel()
+            fadePending = true
+            _positionMs.value = pos
+            _durationMs.value = 0
+            exoPlayer.setMediaItem(MediaItem.fromUri(Uri.parse(url)))
+            if (pos > 0) exoPlayer.seekTo(pos.toLong())
+            exoPlayer.prepare()
+            if (wasPlaying) exoPlayer.play() else exoPlayer.pause()
+            startProgress()
         }
     }
 
     fun togglePlay() {
-        val player = mediaPlayer
-        if (player == null) {
-            if (_queue.value.isNotEmpty() && _index.value < 0) playAt(0)
+        if (_queue.value.isEmpty()) return
+        if (_index.value < 0) {
+            playAt(0)
             return
         }
-        if (player.isPlaying) {
-            player.pause()
-            _isPlaying.value = false
-        } else {
-            player.start()
-            _isPlaying.value = true
-            startProgress()
-        }
+        if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
     }
 
     fun next() {
@@ -205,11 +259,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun seekTo(ms: Int) {
-        try {
-            mediaPlayer?.seekTo(ms.coerceIn(0, _durationMs.value))
-            _positionMs.value = ms.coerceIn(0, _durationMs.value)
-        } catch (_: Exception) {
-        }
+        val d = exoPlayer.duration
+        val clamped = if (d > 0) ms.coerceIn(0, d.toInt()) else ms.coerceAtLeast(0)
+        exoPlayer.seekTo(clamped.toLong())
+        _positionMs.value = clamped
+    }
+
+    /** Skip forward/back by a few seconds, e.g. +/-10s buttons. */
+    fun seekBy(deltaMs: Int) {
+        seekTo(_positionMs.value + deltaMs)
     }
 
     fun toggleShuffle() { _shuffle.value = !_shuffle.value }
@@ -247,7 +305,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 left -= 1
                 _sleepMinLeft.value = left
             }
-            mediaPlayer?.pause()
+            exoPlayer.pause()
             _isPlaying.value = false
         }
     }
@@ -260,10 +318,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         progressJob?.cancel()
         progressJob = viewModelScope.launch {
             while (true) {
-                val player = mediaPlayer
-                if (player != null && player.isPlaying) {
-                    _positionMs.value = player.currentPosition
-                    if (player.duration > 0) _durationMs.value = player.duration
+                if (exoPlayer.isPlaying) {
+                    _positionMs.value = exoPlayer.currentPosition.toInt()
+                    val d = exoPlayer.duration
+                    if (d > 0) _durationMs.value = d.toInt()
                 }
                 delay(250)
             }
@@ -271,18 +329,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Simple volume fade-in when a crossfade duration is set. */
-    private fun applyCrossfadeIn(player: MediaPlayer) {
+    private fun applyCrossfadeIn() {
         val secs = settings.crossfadeSec.value
         if (secs <= 0) {
-            player.setVolume(1f, 1f)
+            exoPlayer.volume = 1f
             return
         }
         fadeJob = viewModelScope.launch {
+            exoPlayer.volume = 0f
             val steps = 20
             val stepMs = (secs * 1000L / steps).coerceAtLeast(25L)
             for (i in 1..steps) {
-                val v = i / steps.toFloat()
-                try { player.setVolume(v, v) } catch (_: Exception) { break }
+                exoPlayer.volume = i / steps.toFloat()
                 delay(stepMs)
             }
         }
@@ -310,17 +368,28 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         _plainLyrics.value = null
         viewModelScope.launch {
             try {
+                // 1) Exact match, with duration.
                 val res = ApiClient.lyrics.getLyrics(
                     trackName = song.title,
                     artistName = song.artist,
                     duration = song.durationSec.takeIf { it > 0 }
                 )
-                applyLyrics(res.syncedLyrics, res.plainLyrics)
+                if (applyLyrics(res.syncedLyrics, res.plainLyrics)) return@launch
+                // 2) Search by track + artist.
+                val list = ApiClient.lyrics.searchLyrics(song.title, song.artist)
+                val first = list.firstOrNull()
+                if (first != null && applyLyrics(first.syncedLyrics, first.plainLyrics)) return@launch
+                // 3) Search by track only.
+                val list2 = ApiClient.lyrics.searchLyrics(song.title, "")
+                val first2 = list2.firstOrNull()
+                if (first2 != null) applyLyrics(first2.syncedLyrics, first2.plainLyrics)
             } catch (_: Exception) {
+                // The exact lookup threw (usually network): one more
+                // attempt through search before giving up.
                 try {
                     val list = ApiClient.lyrics.searchLyrics(song.title, song.artist)
                     val first = list.firstOrNull()
-                    applyLyrics(first?.syncedLyrics, first?.plainLyrics)
+                    if (first != null) applyLyrics(first.syncedLyrics, first.plainLyrics)
                 } catch (_: Exception) {
                     _plainLyrics.value = null
                 }
@@ -330,10 +399,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun applyLyrics(synced: String?, plain: String?) {
-        val lines = parseLrc(synced)
+    /** Stores the lyrics and reports whether anything usable was found.
+     *  Falls back to timestamps embedded in the plain text when no
+     *  synced block exists (LRCLIB entries often carry them). */
+    private fun applyLyrics(synced: String?, plain: String?): Boolean {
+        val lines = parseLrc(synced).ifEmpty { parseLrc(plain) }
         _lyricLines.value = lines
         _plainLyrics.value = if (lines.isEmpty()) plain?.ifBlank { null } else null
+        return lines.isNotEmpty() || !plain.isNullOrBlank()
     }
 
     /** Suggestions for the current song go into the queue tail (site behaviour). */
@@ -357,7 +430,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         progressJob?.cancel()
         sleepJob?.cancel()
         fadeJob?.cancel()
-        mediaPlayer?.release()
+        exoPlayer.removeListener(listener)
+        exoPlayer.release()
         super.onCleared()
     }
 }

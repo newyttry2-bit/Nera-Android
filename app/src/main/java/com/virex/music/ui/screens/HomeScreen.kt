@@ -48,15 +48,20 @@ import com.virex.music.ui.components.SectionHeader
 import com.virex.music.ui.components.SongRow
 import com.virex.music.ui.components.VirexChip
 import com.virex.music.ui.theme.VirexColors
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 
+// Each tab merges several queries: one query returns tracks from the
+// same compilation over and over (same artwork everywhere), while a
+// merge of artist + chart queries gives real songs with real covers.
 private val Categories = listOf(
-    "Trending" to "trending bollywood songs",
-    "Hindi" to "hindi songs",
-    "English" to "english pop songs",
-    "Punjabi" to "punjabi songs",
-    "Lo-Fi" to "lofi songs",
-    "Workout" to "workout songs",
-    "Classics" to "old hindi classics"
+    "Trending" to listOf("trending hindi songs", "trending english songs", "arijit singh", "trending punjabi songs"),
+    "Hindi" to listOf("arijit singh", "hindi love songs", "bollywood hits"),
+    "English" to listOf("english pop songs", "ed sheeran", "imagine dragons"),
+    "Punjabi" to listOf("punjabi songs", "diljit dosanjh", "punjabi hits"),
+    "Lo-Fi" to listOf("lofi songs", "lofi hindi", "chill lofi"),
+    "Workout" to listOf("workout songs", "gym songs", "workout hindi"),
+    "Classics" to listOf("old hindi classics", "kishore kumar", "lata mangeshkar")
 )
 
 @Composable
@@ -79,8 +84,26 @@ fun HomeScreen(
         loading = true
         loadFailed = false
         try {
-            val res = ApiClient.search.searchSongs(Categories[selected].second, 20)
-            songs = res.songs
+            val queries = Categories[selected].second
+            val lists = queries.map { q ->
+                async {
+                    try {
+                        ApiClient.search.searchSongs(q, 12).songs
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                }
+            }.awaitAll()
+            // Dedupe by song, then by artwork: compilation tracks share
+            // one cover, and the same cover repeated looks broken.
+            val seenArt = mutableSetOf<String>()
+            songs = lists.flatten()
+                .distinctBy { it.id }
+                .filter { song ->
+                    val art = song.artworkUrl
+                    if (art.isNullOrBlank()) true else seenArt.add(art)
+                }
+                .take(24)
             if (songs.isEmpty()) loadFailed = true
         } catch (_: Exception) {
             songs = emptyList()
@@ -162,7 +185,7 @@ fun HomeScreen(
         } else {
             item {
                 SectionHeader(
-                    "Trending Mix",
+                    "${Categories[selected].first} Mix",
                     Modifier.padding(horizontal = 16.dp)
                 )
                 Spacer(Modifier.height(12.dp))

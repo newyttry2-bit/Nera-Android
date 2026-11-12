@@ -22,12 +22,14 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -189,12 +191,14 @@ fun PlayerScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Canvas(Modifier.fillMaxSize()) {
-                    val stroke = 2.dp.toPx()
-                    val inset = stroke / 2f + 4.dp.toPx()
+                    val trackStroke = 2.dp.toPx()
+                    val progressStroke = 3.5.dp.toPx()
+                    val inset = progressStroke / 2f + 4.dp.toPx()
+                    val ringR = size.minDimension / 2f - inset
                     drawCircle(
                         color = Color.White.copy(alpha = 0.14f),
-                        radius = size.minDimension / 2f - inset,
-                        style = Stroke(width = stroke)
+                        radius = ringR,
+                        style = Stroke(width = trackStroke)
                     )
                     if (progress > 0f) {
                         drawArc(
@@ -202,14 +206,19 @@ fun PlayerScreen(
                             startAngle = -90f,
                             sweepAngle = 360f * progress,
                             useCenter = false,
-                            style = Stroke(width = stroke, cap = StrokeCap.Round)
+                            style = Stroke(width = progressStroke, cap = StrokeCap.Round)
                         )
                     }
-                    // Red progress head dot.
+                    // Progress head: red dot with a soft white glow so
+                    // it reads as a handle sitting on the ring.
                     val angleRad = Math.toRadians((-90f + 360f * progress).toDouble())
-                    val r = size.minDimension / 2f - inset
-                    val dotX = size.width / 2f + r * kotlin.math.cos(angleRad).toFloat()
-                    val dotY = size.height / 2f + r * kotlin.math.sin(angleRad).toFloat()
+                    val dotX = size.width / 2f + ringR * kotlin.math.cos(angleRad).toFloat()
+                    val dotY = size.height / 2f + ringR * kotlin.math.sin(angleRad).toFloat()
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.22f),
+                        radius = 9.dp.toPx(),
+                        center = Offset(dotX, dotY)
+                    )
                     drawCircle(
                         color = VirexColors.ProgressRed,
                         radius = 5.dp.toPx(),
@@ -279,8 +288,28 @@ fun PlayerScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(formatDuration(position / 1000), color = VirexColors.Grey, fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    GlassIconButton(
+                        icon = Icons.Filled.Replay10,
+                        description = "Back 10 seconds",
+                        onClick = { player.seekBy(-10_000) },
+                        sizeDp = 32,
+                        iconSizeDp = 16
+                    )
+                    GlassIconButton(
+                        icon = Icons.Filled.Forward10,
+                        description = "Forward 10 seconds",
+                        onClick = { player.seekBy(10_000) },
+                        sizeDp = 32,
+                        iconSizeDp = 16
+                    )
+                }
                 Text(formatDuration(duration / 1000), color = VirexColors.Grey, fontSize = 12.sp)
             }
 
@@ -341,7 +370,7 @@ fun PlayerScreen(
                     Icons.Filled.Timer
                 ) { showSleep = true }
                 PlayerTextButton(
-                    if (song!!.isLocal) "HQ · FILE" else "HQ · ${song!!.qualityLabel(hq)}",
+                    if (song!!.isLocal) "HQ FILE" else "HQ ${song!!.qualityLabel(hq)}",
                     null
                 ) { if (!song!!.isLocal) player.toggleHq() }
             }
@@ -495,6 +524,6 @@ private fun PlayerTextButton(
             Icon(icon, contentDescription = null, tint = VirexColors.Grey, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(4.dp))
         }
-        Text(label, color = VirexColors.White, fontSize = 13.sp)
+        Text(label, color = VirexColors.White, fontSize = 13.sp, maxLines = 1)
     }
 }
