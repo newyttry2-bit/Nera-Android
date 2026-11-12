@@ -1,17 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- MediaStore / local-file playback only. No download of streaming-service
-         tracks is implemented in this app (see README). -->
+    <!-- Streaming search/playback + local-file playback only.
+         Streamed songs are never downloaded or written to storage. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
 
     <application
         android:allowBackup="true"
-        android:icon="@drawable/logo"
-        android:roundIcon="@drawable/logo"
+        android:icon="@drawable/ic_music_note"
+        android:roundIcon="@drawable/ic_music_note"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.VirexMusic">

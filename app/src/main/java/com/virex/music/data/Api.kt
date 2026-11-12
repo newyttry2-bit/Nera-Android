@@ -5,12 +5,10 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
+import retrofit2.http.Path
 import retrofit2.http.Query
 
-/**
- * Same public endpoints as Virex Music's web app, for search and
- * playback previews only. No API keys are used or invented here.
- */
+/** Same public endpoints as the Virex Music website. No API keys. */
 interface SearchApi {
     @GET("api/search/songs")
     suspend fun searchSongs(
@@ -20,7 +18,7 @@ interface SearchApi {
 
     @GET("api/songs/{id}/suggestions")
     suspend fun suggestions(
-        @retrofit2.http.Path("id") id: String,
+        @Path("id") id: String,
         @Query("limit") limit: Int = 20
     ): SearchResponse
 }

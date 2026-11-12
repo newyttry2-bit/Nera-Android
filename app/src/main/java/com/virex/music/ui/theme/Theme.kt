@@ -1,35 +1,105 @@
 package com.virex.music.ui.theme
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 
-/** Virex Music web colours: black #000000, surface #121212, accent #1DB954. */
-val VirexBlack = Color(0xFF000000)
-val VirexSurface = Color(0xFF121212)
-val VirexCard = Color(0xFF111111)
-val VirexGreen = Color(0xFF1DB954)
-val VirexText = Color(0xFFFFFFFF)
-val VirexSubtext = Color(0xFFA1A1A1)
+/**
+ * "Black glass, thin lines" — our own design.
+ * Pure black base, one glass material, hairline borders, small precise
+ * buttons. The app has almost no colour of its own; colour comes from
+ * the song artwork glowing behind the glass.
+ */
+object VirexColors {
+    val Black = Color(0xFF000000)
+    val Surface = Color(0xFF0A0A0A)
+    val Glass = Color.White.copy(alpha = 0.08f)
+    val GlassStrong = Color.White.copy(alpha = 0.12f)
+    val Hairline = Color.White.copy(alpha = 0.14f)
+    val White = Color(0xFFFFFFFF)
+    val Grey = Color(0xFF9A9A9A)
+    val DimGrey = Color(0xFF666666)
+    val ProgressRed = Color(0xFFE53935)
+}
 
-private val DarkScheme = darkColorScheme(
-    primary = VirexGreen,
+private val VirexColorScheme = darkColorScheme(
+    primary = Color.White,
     onPrimary = Color.Black,
-    background = VirexBlack,
-    surface = VirexSurface,
-    onBackground = VirexText,
-    onSurface = VirexText
+    secondary = VirexColors.Grey,
+    background = VirexColors.Black,
+    surface = VirexColors.Surface,
+    onBackground = Color.White,
+    onSurface = Color.White
+)
+
+private val VirexTypography = Typography(
+    displaySmall = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Light,
+        fontSize = 28.sp,
+        letterSpacing = (-0.5).sp
+    ),
+    headlineMedium = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Light,
+        fontSize = 22.sp
+    ),
+    titleLarge = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 18.sp
+    ),
+    titleMedium = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 15.sp
+    ),
+    bodyLarge = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 15.sp
+    ),
+    bodyMedium = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 14.sp
+    ),
+    bodySmall = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 12.sp
+    ),
+    labelSmall = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Medium,
+        fontSize = 11.sp,
+        letterSpacing = 1.5.sp
+    )
 )
 
 @Composable
-fun VirexMusicTheme(content: @Composable () -> Unit) {
+fun VirexMusicTheme(
+    pureBlack: Boolean = true,
+    content: @Composable () -> Unit
+) {
+    val scheme = if (pureBlack) {
+        VirexColorScheme
+    } else {
+        VirexColorScheme.copy(
+            background = Color(0xFF101010),
+            surface = Color(0xFF161616)
+        )
+    }
     MaterialTheme(
-        colorScheme = DarkScheme,
-        // Outfit is a Google Font; the web app loads it from fonts.googleapis.com.
-        // This scaffold uses the system sans-serif stack with the same weights
-        // so no font file needs to be bundled. Replace with a bundled Outfit
-        // font in res/font/ for a pixel-identical look.
+        colorScheme = scheme,
+        typography = VirexTypography,
         content = content
     )
 }
