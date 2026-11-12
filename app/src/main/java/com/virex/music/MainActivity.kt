@@ -13,7 +13,9 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -23,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -38,6 +41,7 @@ import com.virex.music.ui.components.VirexBottomBar
 import com.virex.music.ui.screens.FilesScreen
 import com.virex.music.ui.screens.HomeScreen
 import com.virex.music.ui.screens.LibraryScreen
+import com.virex.music.ui.screens.LyricsScreen
 import com.virex.music.ui.screens.PlayerScreen
 import com.virex.music.ui.screens.PlaylistDetailScreen
 import com.virex.music.ui.screens.SearchScreen
@@ -68,12 +72,18 @@ fun VirexApp(player: PlayerViewModel, db: AppDatabase) {
     val currentRoute = navBackStackEntry?.destination?.route ?: "home"
     val currentSong by player.current.collectAsState()
     var playerExpanded by remember { mutableStateOf(false) }
+    var lyricsOpen by remember { mutableStateOf(false) }
 
     val mainRoutes = BottomDestinations.map { it.route }
     val showBottomBar = currentRoute in mainRoutes
 
     BackHandler(enabled = playerExpanded) {
         playerExpanded = false
+    }
+    // Registered after the player handler, so back closes the lyrics
+    // page first while it is on top of the player.
+    BackHandler(enabled = lyricsOpen) {
+        lyricsOpen = false
     }
 
     Box(Modifier.fillMaxSize().background(VirexColors.Black)) {
@@ -86,6 +96,7 @@ fun VirexApp(player: PlayerViewModel, db: AppDatabase) {
                             player = player,
                             onExpand = { playerExpanded = true }
                         )
+                        Spacer(Modifier.height(8.dp))
                     }
                     if (showBottomBar) {
                         VirexBottomBar(
@@ -173,9 +184,34 @@ fun VirexApp(player: PlayerViewModel, db: AppDatabase) {
             Box(Modifier.fillMaxSize().background(VirexColors.Black)) {
                 PlayerScreen(
                     player = player,
-                    onClose = { playerExpanded = false }
+                    onClose = { playerExpanded = false },
+                    onOpenLyrics = { lyricsOpen = true }
                 )
             }
+        }
+
+        // Full-screen lyrics page, sliding up over the player.
+        AnimatedVisibility(
+            visible = lyricsOpen && currentSong != null,
+            enter = slideInVertically(
+                initialOffsetY = { it },
+                animationSpec = spring(
+                    stiffness = Spring.StiffnessMedium,
+                    dampingRatio = Spring.DampingRatioNoBouncy
+                )
+            ),
+            exit = slideOutVertically(
+                targetOffsetY = { it },
+                animationSpec = spring(
+                    stiffness = Spring.StiffnessMedium,
+                    dampingRatio = Spring.DampingRatioNoBouncy
+                )
+            )
+        ) {
+            LyricsScreen(
+                player = player,
+                onClose = { lyricsOpen = false }
+            )
         }
     }
 }

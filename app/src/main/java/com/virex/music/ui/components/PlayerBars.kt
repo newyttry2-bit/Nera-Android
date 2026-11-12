@@ -3,6 +3,7 @@ package com.virex.music.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -54,7 +55,7 @@ import com.virex.music.player.PlayerViewModel
 import com.virex.music.ui.theme.VirexColors
 import kotlinx.coroutines.launch
 
-/** Thin glass strip above the bottom bar. Tapping expands the full player. */
+/** Floating glass pill above the nav bar. Tapping expands the full player. */
 @Composable
 fun MiniPlayer(
     player: PlayerViewModel,
@@ -67,22 +68,15 @@ fun MiniPlayer(
     val duration by player.durationMs.collectAsState()
     if (song == null) return
     val progress = if (duration > 0) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
-    Column(
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onExpand)
+            .padding(horizontal = 16.dp)
+            .clip(RoundedCornerShape(28.dp))
             .background(VirexColors.Surface)
-            .border(1.dp, VirexColors.Hairline, RoundedCornerShape(0.dp))
+            .border(1.dp, VirexColors.Hairline, RoundedCornerShape(28.dp))
+            .clickable(onClick = onExpand)
     ) {
-        // 2dp progress line along the top edge.
-        Box(Modifier.fillMaxWidth().height(2.dp).background(Color.White.copy(alpha = 0.12f))) {
-            Box(
-                Modifier
-                    .fillMaxWidth(progress)
-                    .height(2.dp)
-                    .background(Color.White)
-            )
-        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -93,7 +87,7 @@ fun MiniPlayer(
                 url = song!!.artworkUrl,
                 contentDescription = song!!.title,
                 modifier = Modifier.size(40.dp),
-                cornerDp = 8
+                cornerDp = 20
             )
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
@@ -126,6 +120,14 @@ fun MiniPlayer(
                 sizeDp = 36
             )
         }
+        // 2dp progress line along the pill's bottom edge.
+        Box(
+            Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth(progress)
+                .height(2.dp)
+                .background(Color.White)
+        )
     }
 }
 
@@ -142,7 +144,8 @@ val BottomDestinations = listOf(
     BottomDestination("files", "Your Files", Icons.Filled.Folder)
 )
 
-/** Bottom bar: black, hairline top border, 4 labelled destinations. */
+/** Floating glass pill nav: the selected tab is a lighter pill
+ *  showing its label, the others show just their icon. */
 @Composable
 fun VirexBottomBar(
     currentRoute: String,
@@ -152,31 +155,39 @@ fun VirexBottomBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(VirexColors.Black)
-            .border(1.dp, VirexColors.Hairline, RoundedCornerShape(0.dp))
-            .padding(vertical = 6.dp)
+            .padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
+            .clip(RoundedCornerShape(28.dp))
+            .background(VirexColors.Surface)
+            .border(1.dp, VirexColors.Hairline, RoundedCornerShape(28.dp))
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         for (dest in BottomDestinations) {
             val selected = currentRoute == dest.route
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable { onNavigate(dest.route) }
-                    .padding(vertical = 4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(
-                    imageVector = dest.icon,
-                    contentDescription = dest.label,
-                    tint = if (selected) VirexColors.White else VirexColors.Grey,
-                    modifier = Modifier.size(22.dp)
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = dest.label,
-                    color = if (selected) VirexColors.White else VirexColors.Grey,
-                    fontSize = 11.sp
-                )
+            Pressable(onClick = { onNavigate(dest.route) }) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(if (selected) VirexColors.GlassStrong else Color.Transparent)
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = dest.icon,
+                        contentDescription = dest.label,
+                        tint = if (selected) VirexColors.White else VirexColors.Grey,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    if (selected) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = dest.label,
+                            color = VirexColors.White,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
             }
         }
     }

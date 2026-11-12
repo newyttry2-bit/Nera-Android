@@ -3,8 +3,7 @@ package com.virex.music.ui.screens
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,14 +17,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
@@ -43,7 +39,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,11 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -72,17 +63,16 @@ import com.virex.music.player.LoopMode
 import com.virex.music.player.PlayerViewModel
 import com.virex.music.ui.components.GlassIconButton
 import com.virex.music.ui.components.PlayButton
+import com.virex.music.ui.components.SnakeProgress
 import com.virex.music.ui.components.SongRow
 import com.virex.music.ui.theme.VirexColors
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
-import kotlin.math.atan2
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerScreen(
     player: PlayerViewModel,
     onClose: () -> Unit,
+    onOpenLyrics: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val song by player.current.collectAsState()
@@ -103,7 +93,6 @@ fun PlayerScreen(
     val error by player.error.collectAsState()
 
     var showQueue by remember { mutableStateOf(false) }
-    var showLyrics by remember { mutableStateOf(false) }
     var showSleep by remember { mutableStateOf(false) }
 
     if (song == null) {
@@ -117,15 +106,6 @@ fun PlayerScreen(
     val lyricIdx = currentLyricIndex(lines, position.toLong())
     val currentLine = lines.getOrNull(lyricIdx)?.text
     val glowMs = (600f / animSpeed).toInt().coerceIn(200, 1200)
-
-    fun seekFromOffset(offset: Offset, boxSizePx: Int) {
-        if (duration <= 0) return
-        val cx = boxSizePx / 2f
-        val cy = boxSizePx / 2f
-        val angleDeg = Math.toDegrees(atan2((offset.y - cy).toDouble(), (offset.x - cx).toDouble())).toFloat()
-        val fraction = ((angleDeg + 90f + 360f) % 360f) / 360f
-        player.seekTo((fraction * duration).toInt())
-    }
 
     Box(modifier.fillMaxSize()) {
         // Soft artwork glow behind everything (crossfades on track change).
@@ -167,86 +147,28 @@ fun PlayerScreen(
                 Spacer(Modifier.size(48.dp))
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
 
-            // Circular artwork with a thin progress ring + red dot head.
-            // Dragging on the ring seeks; tapping the ring jumps there.
-            Box(
-                modifier = Modifier
-                    .size(280.dp)
-                    .pointerInput(duration) {
-                        coroutineScope {
-                            launch {
-                                detectTapGestures { offset ->
-                                    seekFromOffset(offset, size.width)
-                                }
-                            }
-                            launch {
-                                detectDragGestures { change, _ ->
-                                    seekFromOffset(change.position, size.width)
-                                }
-                            }
-                        }
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Canvas(Modifier.fillMaxSize()) {
-                    val trackStroke = 2.dp.toPx()
-                    val progressStroke = 3.5.dp.toPx()
-                    val inset = progressStroke / 2f + 4.dp.toPx()
-                    val ringR = size.minDimension / 2f - inset
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.14f),
-                        radius = ringR,
-                        style = Stroke(width = trackStroke)
-                    )
-                    if (progress > 0f) {
-                        drawArc(
-                            color = Color.White,
-                            startAngle = -90f,
-                            sweepAngle = 360f * progress,
-                            useCenter = false,
-                            style = Stroke(width = progressStroke, cap = StrokeCap.Round)
-                        )
-                    }
-                    // Progress head: red dot with a soft white glow so
-                    // it reads as a handle sitting on the ring.
-                    val angleRad = Math.toRadians((-90f + 360f * progress).toDouble())
-                    val dotX = size.width / 2f + ringR * kotlin.math.cos(angleRad).toFloat()
-                    val dotY = size.height / 2f + ringR * kotlin.math.sin(angleRad).toFloat()
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.22f),
-                        radius = 9.dp.toPx(),
-                        center = Offset(dotX, dotY)
-                    )
-                    drawCircle(
-                        color = VirexColors.ProgressRed,
-                        radius = 5.dp.toPx(),
-                        center = Offset(dotX, dotY)
+            // Circular artwork, no ring: progress lives on the snake bar.
+            if (song!!.artworkUrl.isNullOrBlank()) {
+                Box(
+                    Modifier.size(280.dp).clip(CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.MusicNote,
+                        contentDescription = null,
+                        tint = VirexColors.Grey,
+                        modifier = Modifier.size(72.dp)
                     )
                 }
-                if (song!!.artworkUrl.isNullOrBlank()) {
-                    Box(
-                        Modifier
-                            .size(240.dp)
-                            .clip(CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Filled.MusicNote,
-                            contentDescription = null,
-                            tint = VirexColors.Grey,
-                            modifier = Modifier.size(72.dp)
-                        )
-                    }
-                } else {
-                    AsyncImage(
-                        model = song!!.artworkUrl,
-                        contentDescription = song!!.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(240.dp).clip(CircleShape)
-                    )
-                }
+            } else {
+                AsyncImage(
+                    model = song!!.artworkUrl,
+                    contentDescription = song!!.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(280.dp).clip(CircleShape)
+                )
             }
 
             Spacer(Modifier.height(24.dp))
@@ -270,8 +192,7 @@ fun PlayerScreen(
                 textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(12.dp))
-            // Current synced-lyric line. LRC gives line-level timing, so the
-            // whole current line shows in white; the full view highlights it.
+            // Current synced-lyric line; tapping it opens the full lyrics page.
             Text(
                 text = when {
                     lyricsLoading -> "Finding lyrics…"
@@ -283,10 +204,20 @@ fun PlayerScreen(
                 fontSize = 14.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                modifier = Modifier.clickable(onClick = onOpenLyrics)
             )
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(8.dp))
+
+            // The snake: animated wave progress bar. Drag or tap to seek.
+            SnakeProgress(
+                progress = progress,
+                positionMs = position,
+                onSeek = { fraction ->
+                    if (duration > 0) player.seekTo((fraction * duration).toInt())
+                }
+            )
 
             Row(
                 Modifier.fillMaxWidth(),
@@ -313,7 +244,7 @@ fun PlayerScreen(
                 Text(formatDuration(duration / 1000), color = VirexColors.Grey, fontSize = 12.sp)
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp))
 
             // Controls: small glass circles, 56dp play in the middle.
             Row(
@@ -364,7 +295,7 @@ fun PlayerScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 PlayerTextButton("Queue", Icons.Filled.QueueMusic) { showQueue = true }
-                PlayerTextButton("Lyrics", Icons.Filled.MusicNote) { showLyrics = true }
+                PlayerTextButton("Lyrics", Icons.Filled.MusicNote) { onOpenLyrics() }
                 PlayerTextButton(
                     if (sleepLeft > 0) "Sleep ${sleepLeft}m" else "Sleep",
                     Icons.Filled.Timer
@@ -419,60 +350,6 @@ fun PlayerScreen(
                     }
                 }
                 item { Spacer(Modifier.height(32.dp)) }
-            }
-        }
-    }
-
-    if (showLyrics) {
-        ModalBottomSheet(
-            onDismissRequest = { showLyrics = false },
-            sheetState = rememberModalBottomSheetState(),
-            containerColor = VirexColors.Surface
-        ) {
-            Text(
-                "LYRICS",
-                color = VirexColors.Grey,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = 1.5.sp,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            )
-            if (lines.isNotEmpty()) {
-                val listState = rememberLazyListState()
-                LaunchedEffect(lyricIdx) {
-                    if (lyricIdx >= 0) {
-                        listState.animateScrollToItem((lyricIdx - 2).coerceAtLeast(0))
-                    }
-                }
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-                ) {
-                    items(lines.size) { i ->
-                        Text(
-                            lines[i].text,
-                            color = if (i == lyricIdx) VirexColors.White else VirexColors.Grey,
-                            fontSize = if (i == lyricIdx) 17.sp else 15.sp,
-                            fontWeight = if (i == lyricIdx) FontWeight.Medium else FontWeight.Normal,
-                            modifier = Modifier.padding(vertical = 6.dp)
-                        )
-                    }
-                    item { Spacer(Modifier.height(32.dp)) }
-                }
-            } else if (plainLyrics != null) {
-                LazyColumn(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                    item {
-                        Text(plainLyrics!!, color = VirexColors.White, fontSize = 15.sp)
-                        Spacer(Modifier.height(32.dp))
-                    }
-                }
-            } else {
-                Text(
-                    if (lyricsLoading) "Finding lyrics…" else "No lyrics found for this song.",
-                    color = VirexColors.Grey,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(16.dp)
-                )
             }
         }
     }

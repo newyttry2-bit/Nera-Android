@@ -138,6 +138,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun clearError() { _error.value = null }
 
+    /** Re-run the lyrics lookup for the current song (lyrics page retry). */
+    fun retryLyrics() {
+        val song = _current.value ?: return
+        loadLyrics(song)
+    }
+
     fun playQueue(songs: List<Song>, startIndex: Int = 0) {
         if (songs.isEmpty()) return
         suggestionsForId = null

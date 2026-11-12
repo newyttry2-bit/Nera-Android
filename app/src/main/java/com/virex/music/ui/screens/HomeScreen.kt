@@ -1,5 +1,6 @@
 package com.virex.music.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,8 +20,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,6 +36,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -44,8 +49,8 @@ import com.virex.music.player.PlayerViewModel
 import com.virex.music.ui.components.AddToPlaylistDialog
 import com.virex.music.ui.components.ArtworkImage
 import com.virex.music.ui.components.GlassIconButton
+import com.virex.music.ui.components.Pressable
 import com.virex.music.ui.components.SectionHeader
-import com.virex.music.ui.components.SongRow
 import com.virex.music.ui.components.VirexChip
 import com.virex.music.ui.theme.VirexColors
 import kotlinx.coroutines.async
@@ -113,8 +118,10 @@ fun HomeScreen(
         }
     }
 
-    val trending = songs.take(10)
-    val quickPicks = songs.drop(10)
+    val hero = songs.firstOrNull()
+    val trending = songs.drop(1).take(10)
+    val quickPicks = songs.drop(11)
+    val recentSongs = recentPlays.map { it.toSong() }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -155,7 +162,7 @@ fun HomeScreen(
                     )
                 }
             }
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(16.dp))
         }
 
         if (loading) {
@@ -183,6 +190,141 @@ fun HomeScreen(
                 }
             }
         } else {
+            // Hero: the top song of the mix as a big feature card.
+            if (hero != null) {
+                item {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(280.dp)
+                            .padding(horizontal = 16.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable { player.playQueue(songs, 0) }
+                    ) {
+                        ArtworkImage(
+                            url = hero.artworkUrl,
+                            contentDescription = hero.title,
+                            modifier = Modifier.fillMaxSize(),
+                            cornerDp = 20
+                        )
+                        // Bottom scrim so the text reads over any artwork.
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            Color.Black.copy(alpha = 0.55f),
+                                            Color.Black.copy(alpha = 0.92f)
+                                        )
+                                    )
+                                )
+                        )
+                        Column(
+                            Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(16.dp)
+                        ) {
+                            Text(
+                                text = if (selected == 0) "TRENDING NOW" else "${Categories[selected].first.uppercase()} MIX",
+                                color = VirexColors.Grey,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                letterSpacing = 1.5.sp
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = hero.title,
+                                color = VirexColors.White,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = hero.artist,
+                                color = VirexColors.Grey,
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Pressable(onClick = { player.playQueue(songs, 0) }) {
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .background(VirexColors.White)
+                                        .padding(horizontal = 18.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Filled.PlayArrow,
+                                        contentDescription = null,
+                                        tint = VirexColors.Black,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "Play",
+                                        color = VirexColors.Black,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(24.dp))
+                }
+            }
+
+            // Recently played as square cards, like the reference home.
+            if (recentSongs.isNotEmpty()) {
+                item {
+                    SectionHeader("Recently played", Modifier.padding(horizontal = 16.dp))
+                    Spacer(Modifier.height(12.dp))
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(recentSongs.size) { i ->
+                            val song = recentSongs[i]
+                            Column(
+                                Modifier.width(120.dp).clickable {
+                                    player.playQueue(recentSongs, i)
+                                }
+                            ) {
+                                ArtworkImage(
+                                    url = song.artworkUrl,
+                                    contentDescription = song.title,
+                                    modifier = Modifier
+                                        .size(120.dp)
+                                        .border(1.dp, VirexColors.Hairline, RoundedCornerShape(14.dp)),
+                                    cornerDp = 14
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    song.title,
+                                    color = VirexColors.White,
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    song.artist,
+                                    color = VirexColors.Grey,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(24.dp))
+                }
+            }
+
             item {
                 SectionHeader(
                     "${Categories[selected].first} Mix",
@@ -195,17 +337,16 @@ fun HomeScreen(
                 ) {
                     items(trending.size) { i ->
                         val song = trending[i]
-                        val cardSize = if (i == 0) 168.dp else 132.dp
                         Column(
-                            Modifier.width(cardSize).clickable {
-                                player.playQueue(trending, i)
+                            Modifier.width(132.dp).clickable {
+                                player.playQueue(songs, i + 1)
                             }
                         ) {
                             ArtworkImage(
                                 url = song.artworkUrl,
                                 contentDescription = song.title,
                                 modifier = Modifier
-                                    .size(cardSize)
+                                    .size(132.dp)
                                     .border(1.dp, VirexColors.Hairline, RoundedCornerShape(14.dp)),
                                 cornerDp = 14
                             )
@@ -280,25 +421,6 @@ fun HomeScreen(
                     }
                 }
                 item { Spacer(Modifier.height(24.dp)) }
-            }
-
-            if (recentPlays.isNotEmpty()) {
-                item {
-                    SectionHeader("Recently played", Modifier.padding(horizontal = 16.dp))
-                }
-                items(recentPlays) { play ->
-                    val song = play.toSong()
-                    Box(Modifier.padding(horizontal = 16.dp)) {
-                        SongRow(
-                            song = song,
-                            onClick = {
-                                val list = recentPlays.map { it.toSong() }
-                                player.playQueue(list, list.indexOfFirst { it.id == song.id }.coerceAtLeast(0))
-                            },
-                            onMore = { moreSong = song }
-                        )
-                    }
-                }
             }
         }
     }
