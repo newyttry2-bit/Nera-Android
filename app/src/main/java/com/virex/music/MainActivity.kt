@@ -8,6 +8,8 @@ import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -91,12 +93,20 @@ fun VirexApp(player: PlayerViewModel, db: AppDatabase) {
             containerColor = VirexColors.Black,
             bottomBar = {
                 Column {
-                    if (currentSong != null && !playerExpanded) {
-                        MiniPlayer(
-                            player = player,
-                            onExpand = { playerExpanded = true }
-                        )
-                        Spacer(Modifier.height(8.dp))
+                    // The mini-player slides up when a song starts and
+                    // slides away when the full player opens.
+                    AnimatedVisibility(
+                        visible = currentSong != null && !playerExpanded,
+                        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+                    ) {
+                        Column {
+                            MiniPlayer(
+                                player = player,
+                                onExpand = { playerExpanded = true }
+                            )
+                            Spacer(Modifier.height(8.dp))
+                        }
                     }
                     if (showBottomBar) {
                         VirexBottomBar(
@@ -125,7 +135,8 @@ fun VirexApp(player: PlayerViewModel, db: AppDatabase) {
                         player = player,
                         db = db,
                         onOpenSettings = { navController.navigate("settings") },
-                        onOpenFiles = { navController.navigate("files") }
+                        onOpenFiles = { navController.navigate("files") },
+                        onOpenPlaylist = { id -> navController.navigate("playlist/$id") }
                     )
                 }
                 composable("search") {

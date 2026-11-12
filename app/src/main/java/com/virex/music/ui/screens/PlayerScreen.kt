@@ -4,6 +4,8 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,7 +51,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -63,9 +69,11 @@ import com.virex.music.player.LoopMode
 import com.virex.music.player.PlayerViewModel
 import com.virex.music.ui.components.GlassIconButton
 import com.virex.music.ui.components.PlayButton
-import com.virex.music.ui.components.SnakeProgress
 import com.virex.music.ui.components.SongRow
 import com.virex.music.ui.theme.VirexColors
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlin.math.atan2
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -106,6 +114,19 @@ fun PlayerScreen(
     val lyricIdx = currentLyricIndex(lines, position.toLong())
     val currentLine = lines.getOrNull(lyricIdx)?.text
     val glowMs = (600f / animSpeed).toInt().coerceIn(200, 1200)
+    // The snake's head length pulses with playback (26°–46°), so the
+    // ring's leading edge slithers instead of sitting still. Position
+    // drives it, so it rests when the song is paused.
+    val snakeLen = 26f + 20f * (0.5f + 0.5f * kotlin.math.sin(position * 0.004f).toFloat())
+
+    fun seekFromOffset(offset: Offset, boxSizePx: Int) {
+        if (duration <= 0) return
+        val cx = boxSizePx / 2f
+        val cy = boxSizePx / 2f
+        val angleDeg = Math.toDegrees(atan2((offset.y - cy).toDouble(), (offset.x - cx).toDouble())).toFloat()
+        val fraction = ((angleDeg + 90f + 360f) % 360f) / 360f
+        player.seekTo((fraction * duration).toInt())
+    }
 
     Box(modifier.fillMaxSize()) {
         // Soft artwork glow behind everything (crossfades on track change).
@@ -149,26 +170,95 @@ fun PlayerScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            // Circular artwork, no ring: progress lives on the snake bar.
-            if (song!!.artworkUrl.isNullOrBlank()) {
-                Box(
-                    Modifier.size(280.dp).clip(CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Filled.MusicNote,
-                        contentDescription = null,
-                        tint = VirexColors.Grey,
-                        modifier = Modifier.size(72.dp)
+            // Circular artwork with the snake ring: a Google-style progress
+            // ring whose leading edge is a thicker segment that pulses in
+            // length as it crawls around the circle. Dragging or tapping
+            // the ring seeks.
+            Box(
+                modifier = Modifier
+                    .size(280.dp)
+                    .pointerInput(duration) {
+                        coroutineScope {
+                            launch {
+                                detectTapGestures { offset ->
+                                    seekFromOffset(offset, size.width)
+                                }
+                            }
+                            launch {
+                                detectDragGestures { change, _ ->
+                                    seekFromOffset(change.position, size.width)
+                                }
+                            }
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(Modifier.fillMaxSize()) {
+                    val trackStroke = 2.dp.toPx()
+                    val progressStroke = 3.dp.toPx()
+                    val inset = 5.dp.toPx() / 2f + 4.dp.toPx()
+                    val ringR = size.minDimension / 2f - inset
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.14f),
+                        radius = ringR,
+                        style = Stroke(width = trackStroke)
+                    )
+                    if (progress > 0f) {
+                        drawArc(
+                            color = Color.White,
+                            startAngle = -90f,
+                            sweepAngle = 360f * progress,
+                            useCenter = false,
+                            style = Stroke(width = progressStroke, cap = StrokeCap.Round)
+                        )
+                        // Snake head: a thicker segment at the leading
+                        // edge, its length pulsing with playback.
+                        val headAngle = -90f + 360f * progress
+                        drawArc(
+                            color = Color.White,
+                            startAngle = headAngle - snakeLen,
+                            sweepAngle = snakeLen,
+                            useCenter = false,
+                            style = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round)
+                        )
+                        // Red head dot with a soft white glow.
+                        val angleRad = Math.toRadians(headAngle.toDouble())
+                        val dotX = size.width / 2f + ringR * kotlin.math.cos(angleRad).toFloat()
+                        val dotY = size.height / 2f + ringR * kotlin.math.sin(angleRad).toFloat()
+                        drawCircle(
+                            color = Color.White.copy(alpha = 0.22f),
+                            radius = 9.dp.toPx(),
+                            center = Offset(dotX, dotY)
+                        )
+                        drawCircle(
+                            color = VirexColors.ProgressRed,
+                            radius = 5.dp.toPx(),
+                            center = Offset(dotX, dotY)
+                        )
+                    }
+                }
+                if (song!!.artworkUrl.isNullOrBlank()) {
+                    Box(
+                        Modifier
+                            .size(240.dp)
+                            .clip(CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.MusicNote,
+                            contentDescription = null,
+                            tint = VirexColors.Grey,
+                            modifier = Modifier.size(72.dp)
+                        )
+                    }
+                } else {
+                    AsyncImage(
+                        model = song!!.artworkUrl,
+                        contentDescription = song!!.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(240.dp).clip(CircleShape)
                     )
                 }
-            } else {
-                AsyncImage(
-                    model = song!!.artworkUrl,
-                    contentDescription = song!!.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(280.dp).clip(CircleShape)
-                )
             }
 
             Spacer(Modifier.height(24.dp))
@@ -208,16 +298,7 @@ fun PlayerScreen(
                 modifier = Modifier.clickable(onClick = onOpenLyrics)
             )
 
-            Spacer(Modifier.height(8.dp))
-
-            // The snake: animated wave progress bar. Drag or tap to seek.
-            SnakeProgress(
-                progress = progress,
-                positionMs = position,
-                onSeek = { fraction ->
-                    if (duration > 0) player.seekTo((fraction * duration).toInt())
-                }
-            )
+            Spacer(Modifier.height(16.dp))
 
             Row(
                 Modifier.fillMaxWidth(),
