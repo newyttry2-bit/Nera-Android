@@ -48,7 +48,10 @@ fun SnakeProgress(
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
-                        val press = awaitPointerEvent(PointerEventType.Press)
+                        // Wait for a press (awaitPointerEvent takes a pass,
+                        // not a type — filter on the event's type instead).
+                        val press = awaitPointerEvent()
+                        if (press.type != PointerEventType.Press) continue
                         val down = press.changes.firstOrNull() ?: continue
                         down.consume()
                         currentOnSeek((down.position.x / size.width).coerceIn(0f, 1f))
